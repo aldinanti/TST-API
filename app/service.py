@@ -1,6 +1,6 @@
 from datetime import datetime
 from app import repository, models
-from sqlalchemy.exc import NoResultFound
+from app.db import get_session as get_db_session
 
 TARIFF_PER_KWH = 3000.0
 
@@ -35,36 +35,27 @@ def stop_charging_session(session_id: int) -> models.ChargingSession:
         raise ValueError("Session bukan dalam status running")
 
     stopped_at = datetime.utcnow()
-    # compute duration hours
     started = session.started_at
     duration_seconds = (stopped_at - started).total_seconds()
     hours = duration_seconds / 3600.0
 
-    # get charger power to compute kWh
     charger = repository.get_charger(session.charger_unit_id)
-    max_kw = charger.max_power_kw if charger else 7.0  # fallback
+    max_kw = charger.max_power_kw if charger else 7.0
 
-    # approximate kWh = power * hours (real system uses telemetry)
     total_kwh = round(max_kw * hours, 3)
-
-    # calculate cost
     cost = total_kwh * TARIFF_PER_KWH
 
-    # mark session
     session.stopped_at = stopped_at
     session.total_kwh = total_kwh
     session.status = "stopped"
     repository.update_session(session)
 
-    # free charger
     if charger:
         charger.is_available = True
         repository.update_charger(charger)
 
-    from app.db import get_session
-    from app.models import PaymentTransaction
-    with get_session() as s:
-        payment = PaymentTransaction(
+    with get_db_session() as s:
+        payment = models.PaymentTransaction(
             charging_session_id=session.id,
             amount=cost,
             method="on_site",
