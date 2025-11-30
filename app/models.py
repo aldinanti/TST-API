@@ -8,8 +8,7 @@ class User(SQLModel, table=True):
     name: str
     email: str
     phone: Optional[str] = None
-
-    # relationship: vehicles could be separate table - for simplicity omit
+    password_hash: Optional[str] = None
 
 # --- ChargingStation aggregate ---
 class ChargingStation(SQLModel, table=True):
@@ -28,15 +27,6 @@ class ChargerUnit(SQLModel, table=True):
 
     station: Optional[ChargingStation] = Relationship(back_populates="charger_units")
 
-# --- PaymentTransaction entity ---
-class PaymentTransaction(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    charging_session_id: Optional[int] = Field(default=None, foreign_key="chargingsession.id")
-    amount: float
-    method: str
-    status: str  # e.g. pending, paid, failed
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
 # --- ChargingSession aggregate root ---
 class ChargingSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -45,11 +35,13 @@ class ChargingSession(SQLModel, table=True):
     started_at: datetime = Field(default_factory=datetime.utcnow)
     stopped_at: Optional[datetime] = None
     total_kwh: Optional[float] = None
-    status: str = "running"  # running | stopped | cancelled
-    # relation
-    payment: Optional[PaymentTransaction] = Relationship(back_populates="session", sa_relationship_kwargs={"uselist": False})
+    status: str = "running"
 
-# Link back relationship for PaymentTransaction
-PaymentTransaction.__fields__["charging_session_id"]  # ensure field exists
-# create reverse relationship manually (SQLModel minimal)
-ChargingSession.__fields__  # noop to satisfy linter
+# --- PaymentTransaction entity ---
+class PaymentTransaction(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    charging_session_id: Optional[int] = Field(default=None, foreign_key="chargingsession.id")
+    amount: float
+    method: str
+    status: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
