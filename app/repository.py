@@ -2,6 +2,9 @@ from sqlmodel import select
 from app.db import get_session as get_db_session
 from app import models
 from typing import Optional, List
+from sqlalchemy.orm import selectinload
+from app import models, db  # kalau belum ada
+from sqlmodel import Session
 
 # ==========================================
 # ACCOUNT CONTEXT (Users & Vehicles)
@@ -47,7 +50,7 @@ def get_vehicle_by_plate(plate: str) -> Optional[models.Vehicle]:
 
 def get_vehicles_by_user(user_id: int) -> List[models.Vehicle]:
     with get_db_session() as s:
-        statement = select(models.Vehicle).where(models.Vehicle.id_user == user_id)
+        statement = select(models.Vehicle).where(models.Vehicle.user_id == user_id) 
         return s.exec(statement).all()
 
 
@@ -62,9 +65,15 @@ def create_station(station: models.Station) -> models.Station:
         s.refresh(station)
     return station
 
-def get_station(station_id: int) -> Optional[models.Station]:
-    with get_db_session() as s:
-        return s.get(models.Station, station_id)
+def get_station(station_id: int):
+    with Session(db.engine) as session:
+        stmt = (
+            select(models.Station)
+            .where(models.Station.station_id == station_id)
+            .options(selectinload(models.Station.station_assets))
+        )
+        station = session.exec(stmt).one_or_none()
+        return station
 
 def list_stations() -> List[models.Station]:
     with get_db_session() as s:
@@ -128,14 +137,14 @@ def update_charging_session(session: models.ChargingSession) -> models.ChargingS
 
 def get_charging_sessions_by_user(user_id: int) -> List[models.ChargingSession]:
     with get_db_session() as s:
-        statement = select(models.ChargingSession).where(models.ChargingSession.id_user == user_id)
+        statement = select(models.ChargingSession).where(models.ChargingSession.user_id == user_id)  
         return s.exec(statement).all()
 
 def get_active_session_by_user(user_id: int) -> Optional[models.ChargingSession]:
     with get_db_session() as s:
         # Check for sessions that are ONGOING
         statement = select(models.ChargingSession).where(
-            models.ChargingSession.id_user == user_id,
+            models.ChargingSession.user_id == user_id,
             models.ChargingSession.charging_status == models.ChargingStatus.ONGOING
         )
         return s.exec(statement).first()
@@ -165,10 +174,10 @@ def update_invoice(invoice: models.Invoice) -> models.Invoice:
 
 def get_invoices_by_user(user_id: int) -> List[models.Invoice]:
     with get_db_session() as s:
-        statement = select(models.Invoice).where(models.Invoice.id_user == user_id)
+        statement = select(models.Invoice).where(models.Invoice.user_id == user_id)
         return s.exec(statement).all()
 
 def get_invoice_by_session(session_id: int) -> Optional[models.Invoice]:
     with get_db_session() as s:
-        statement = select(models.Invoice).where(models.Invoice.id_session == session_id)
+        statement = select(models.Invoice).where(models.Invoice.session_id == session_id)
         return s.exec(statement).first()

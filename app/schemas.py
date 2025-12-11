@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -37,8 +37,7 @@ class TokenData(BaseModel):
 
 # ===== USER / VEHICLE SCHEMAS =====
 class UserRead(BaseModel):
-    id: int
-    name: str
+    user_id: int
     email: EmailStr
     phone: Optional[str] = None
     
@@ -50,8 +49,8 @@ class VehicleCreate(BaseModel):
     connector_port: ConnectorPortBase
 
 class VehicleRead(VehicleCreate):
-    id: int
-    id_user: int
+    vehicle_id: int
+    user_id: int = Field(alias="user_id")
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -62,7 +61,7 @@ class StationCreate(BaseModel):
     connector_list: List[str]
 
 class StationRead(StationCreate):
-    id: int
+    station_id: int
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
@@ -74,11 +73,11 @@ class StationAssetCreate(BaseModel):
     maintenance_log: Optional[MaintenanceLogBase] = None
 
 class StationAssetRead(StationAssetCreate):
-    id: int
+    assets_id: int = Field(alias="asset_id")
     is_available: bool
     created_at: datetime
     
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, by_alias=True)
 
 class StationAssetUpdate(BaseModel):
     is_available: Optional[bool] = None
@@ -89,12 +88,12 @@ class StationDetail(StationRead):
 
 # ===== CHARGING SESSION SCHEMAS =====
 class ChargingSessionStart(BaseModel):
-    id_station_asset: int
+    asset_id: int
 
 class ChargingSessionRead(BaseModel):
-    id: int
-    id_user: int
-    id_station_asset: int
+    session_id: int
+    user_id: int
+    asset_id: int
     start_time: datetime
     end_time: Optional[datetime] = None
     duration: Optional[float] = None
@@ -109,8 +108,8 @@ class TariffRead(BaseModel):
     cost_per_minute: float
 
 class InvoiceRead(BaseModel):
-    id: int
-    id_session: int
+    invoice_id: int
+    session_id: int
     cost_total: float
     billing_total: float
     payment_status: str

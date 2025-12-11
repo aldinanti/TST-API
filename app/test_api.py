@@ -133,7 +133,7 @@ def test_start_charging_session(asset_id):
     url = f"{BASE_URL}/charging-sessions/start"
     headers = {"Authorization": f"Bearer {token}"}
     data = {
-        "id_station_asset": asset_id
+        "asset_id": asset_id
     }
     response = requests.post(url, json=data, headers=headers)
     print_response(response, "10. START CHARGING SESSION")
@@ -213,19 +213,19 @@ def main():
         # 2. Station Management Context
         station = test_create_station()
         test_list_stations()
-        asset = test_create_station_asset(station["id"])
-        test_get_station_detail(station["id"])
+        asset = test_create_station_asset(station["station_id"])
+        test_get_station_detail(station["station_id"])
         
         # 3. Charging Session Context
-        session = test_start_charging_session(asset["id"])
+        session = test_start_charging_session(asset["assets_id"])
         test_get_active_session()
-        test_stop_charging_session(session["id"])
-        test_get_session_detail(session["id"])
+        test_stop_charging_session(session["session_id"])
+        test_get_session_detail(session["session_id"])
         
         # 4. Billing Context
         invoices = test_get_my_invoices()
         if invoices:
-            test_update_invoice_payment(invoices[0]["id"])
+            test_update_invoice_payment(invoices[0]["invoice_id"])
         
         test_get_my_sessions()
         

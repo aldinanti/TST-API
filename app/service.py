@@ -8,7 +8,7 @@ DEFAULT_TARIFF = models.Tariff(
     cost_per_minute=100.0
 )
 
-def start_charging_session(user_id: int, station_asset_id: int) -> models.ChargingSession:
+def start_charging_session(user_id: int, asset_id: int) -> models.ChargingSession:
     # 1. Validate User
     user = repository.get_user(user_id)
     if not user:
@@ -20,7 +20,7 @@ def start_charging_session(user_id: int, station_asset_id: int) -> models.Chargi
         raise ValueError("Anda masih memiliki sesi charging yang aktif")
 
     # 3. Validate Station Asset
-    asset = repository.get_station_asset(station_asset_id)
+    asset = repository.get_station_asset(asset_id)
     if not asset:
         raise ValueError("Station Asset tidak ditemukan")
     if not asset.is_available:
@@ -32,8 +32,8 @@ def start_charging_session(user_id: int, station_asset_id: int) -> models.Chargi
 
     # 5. Create Session
     session = models.ChargingSession(
-        id_user=user_id,
-        id_station_asset=station_asset_id,
+        user_id=user_id,
+        asset_id=asset_id,
         start_time=datetime.utcnow(),
         charging_status=models.ChargingStatus.ONGOING
     )
@@ -54,7 +54,7 @@ def stop_charging_session(session_id: int, manual_kwh: Optional[float] = None) -
     duration_hours = duration_seconds / 3600.0
 
     # 3. Get asset to determine power output (Max kW)
-    asset = repository.get_station_asset(session.id_station_asset)
+    asset = repository.get_station_asset(session.asset_id)
     max_kw = 7.0 # Default fallback
     
     if asset and asset.connector_port:
@@ -95,8 +95,8 @@ def stop_charging_session(session_id: int, manual_kwh: Optional[float] = None) -
 
     # 7. Create Invoice
     invoice = models.Invoice(
-        id_session=session.id,
-        id_user=session.id_user,
+        session_id=session.session_id,
+        user_id=session.user_id,
         tariff=DEFAULT_TARIFF,
         cost_total=round(total_cost, 2),
         billing_total=round(billing_total, 2),

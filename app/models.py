@@ -51,7 +51,7 @@ class User(SQLModel, table=True):
     """Entitas User dari Account Context"""
     __tablename__ = "user"
     
-    id: Optional[int] = Field(default=None, primary_key=True, alias="idUser")
+    user_id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     email: str
     phone: Optional[str] = None
@@ -67,8 +67,8 @@ class Vehicle(SQLModel, table=True):
     """Entitas Vehicle dari Account Context"""
     __tablename__ = "vehicle"
     
-    id: Optional[int] = Field(default=None, primary_key=True)
-    id_user: int = Field(foreign_key="user.id")
+    vehicle_id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.user_id")
     nomor_plat: str = Field(unique=True)
     battery_capacity: float  # dalam kWh
     connector_port: ConnectorPort = Field(sa_column=Column(JSON))
@@ -81,7 +81,7 @@ class Station(SQLModel, table=True):
     """Entitas Station dari Station Management Context"""
     __tablename__ = "station"
     
-    id: Optional[int] = Field(default=None, primary_key=True, alias="idStation")
+    station_id: Optional[int] = Field(default=None, primary_key=True)
     station_operator: str
     location: Location = Field(sa_column=Column(JSON))
     connector_list: List[str] = Field(default=[], sa_column=Column(JSON))  # List connector types
@@ -93,9 +93,9 @@ class Station(SQLModel, table=True):
 class StationAsset(SQLModel, table=True):
     """Entitas StationAsset dari Station Management Context"""
     __tablename__ = "station_asset"
-    
-    id: Optional[int] = Field(default=None, primary_key=True, alias="idSeries")
-    station_id: int = Field(foreign_key="station.id")
+
+    asset_id: Optional[int] = Field(default=None, primary_key=True)
+    station_id: int = Field(foreign_key="station.station_id")
     model: str
     connector_port: ConnectorPort = Field(sa_column=Column(JSON))
     maintenance_log: Optional[MaintenanceLog] = Field(default=None, sa_column=Column(JSON))
@@ -111,9 +111,9 @@ class ChargingSession(SQLModel, table=True):
     """Entitas ChargingSession - Aggregate Root dari Charging Session Context"""
     __tablename__ = "charging_session"
     
-    id: Optional[int] = Field(default=None, primary_key=True, alias="idSession")
-    id_user: int = Field(foreign_key="user.id")
-    id_station_asset: int = Field(foreign_key="station_asset.id")
+    session_id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.user_id")
+    asset_id: int = Field(foreign_key="station_asset.asset_id")
     start_time: datetime = Field(default_factory=datetime.utcnow)
     end_time: Optional[datetime] = None
     duration: Optional[float] = None  # dalam menit
@@ -131,9 +131,9 @@ class Invoice(SQLModel, table=True):
     """Entitas Invoice dari Billing Context"""
     __tablename__ = "invoice"
     
-    id: Optional[int] = Field(default=None, primary_key=True, alias="idInvoice")
-    id_session: int = Field(foreign_key="charging_session.id", unique=True)
-    id_user: int = Field(foreign_key="user.id")
+    invoice_id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="charging_session.session_id", unique=True)
+    user_id: int = Field(foreign_key="user.user_id")
     tariff: Tariff = Field(sa_column=Column(JSON))
     cost_total: float  # Total dari (kWh * tarif_kwh) + (menit * tarif_menit)
     billing_total: float  # Total setelah ditambah biaya layanan, pajak, dll
