@@ -13,7 +13,7 @@ token = None
 def print_response(response, title):
     """Helper function untuk print response dengan format rapi"""
     print(f"\n{'='*60}")
-    print(f"🔹 {title}")
+    print(f" {title}")
     print(f"{'='*60}")
     print(f"Status: {response.status_code}")
     try:
@@ -46,7 +46,7 @@ def test_login(email):
     print_response(response, "2. LOGIN")
     if response.status_code == 200:
         token = response.json()["access_token"]
-        print(f"\n✅ Token saved: {token[:50]}...")
+        print(f"\nToken saved: {token[:50]}...")
     return response.json()
 
 def test_get_me():
@@ -150,7 +150,7 @@ def test_get_active_session():
 def test_stop_charging_session(session_id):
     """Test stop charging session"""
     import time
-    print("\n⏳ Waiting 3 seconds to simulate charging...")
+    print("\nWaiting 3 seconds to simulate charging...")
     time.sleep(3)
     
     url = f"{BASE_URL}/charging-sessions/{session_id}/stop"
@@ -199,7 +199,7 @@ def test_get_my_sessions():
 def main():
     """Main test flow"""
     print("\n" + "="*60)
-    print("🚗 EV CHARGING MANAGEMENT API - INTEGRATION TEST")
+    print("EV CHARGING MANAGEMENT API - INTEGRATION TEST")
     print("="*60)
     
     try:
@@ -230,11 +230,11 @@ def main():
         test_get_my_sessions()
         
         print("\n" + "="*60)
-        print("✅ ALL TESTS COMPLETED SUCCESSFULLY!")
+        print("ALL TESTS COMPLETED SUCCESSFULLY!")
         print("="*60)
         
     except Exception as e:
-        print(f"\n❌ Error occurred: {str(e)}")
+        print(f"\n Error occurred: {str(e)}")
         import traceback
         traceback.print_exc()
 

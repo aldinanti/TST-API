@@ -80,7 +80,7 @@ def list_stations() -> List[models.Station]:
         statement = select(models.Station)
         return s.exec(statement).all()
 
-# --- Station Assets (Fixed: Changed from ChargerUnit to StationAsset) ---
+# === Station Assets (Fixed: Changed from ChargerUnit to StationAsset) ===
 
 def create_station_asset(asset: models.StationAsset) -> models.StationAsset:
     with get_db_session() as s:
