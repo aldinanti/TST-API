@@ -27,3 +27,9 @@ jobs:
     - name: Run tests
       run: |
        pytest -v --ignore=app/test_api.py
+
+    - name: Build Docker image
+    run: docker build -t ev-charging-api .
+
+    - name: Run Docker container
+    run: docker run -d -p 8000:8000 ev-charging-api
