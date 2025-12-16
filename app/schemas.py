@@ -73,7 +73,7 @@ class StationAssetCreate(BaseModel):
     maintenance_log: Optional[MaintenanceLogBase] = None
 
 class StationAssetRead(StationAssetCreate):
-    assets_id: int = Field(alias="asset_id")
+    asset_id: int = Field(alias="asset_id")
     is_available: bool
     created_at: datetime
     

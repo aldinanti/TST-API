@@ -128,12 +128,12 @@ def test_get_station_detail(station_id):
     print_response(response, "9. GET STATION DETAIL")
     return response.json()
 
-def test_start_charging_session(assets_id):
+def test_start_charging_session(asset_id):
     """Test start charging session"""
     url = f"{BASE_URL}/charging-sessions/start"
     headers = {"Authorization": f"Bearer {token}"}
     data = {
-        "assets_id": assets_id
+        "asset_id": asset_id
     }
     response = requests.post(url, json=data, headers=headers)
     print_response(response, "10. START CHARGING SESSION")

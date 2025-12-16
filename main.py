@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 from fastapi.templating import Jinja2Templates
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -15,12 +16,21 @@ from app.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Code to run on startup
+    db.init_db()
+    print("Database initialized successfully!")
+    yield
+    # Code to run on shutdown (jika ada)
+
 app = FastAPI(
     title="EV Charging Management API",
     description="Platform Manajemen Pengisian Baterai Kendaraan Listrik",
     version="2.0.0",
-    docs_url=None,
-    redoc_url=None
+    lifespan=lifespan,
+    docs_url=None, # Menonaktifkan docs default untuk custom UI
+    redoc_url=None # Menonaktifkan redoc default
 )
 
 # Setup templates dan static files (jika ada)
@@ -29,11 +39,6 @@ try:
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
 except:
     templates = None
-
-@app.on_event("startup")
-def on_startup():
-    db.init_db()
-    print("Database initialized successfully!")
 
 # ===== CUSTOM SWAGGER UI =====
 @app.get("/docs", include_in_schema=False)
@@ -206,19 +211,25 @@ def list_stations():
     """List semua stasiun charging (public endpoint)"""
     return repository.list_stations()
 
+@app.get("/stations/search", response_model=List[schemas.StationRead], tags=["3. Stations (Station Management)"])
+def search_stations_by_operator(
+    operator: str = Query(..., description="Nama operator stasiun yang dicari (case-insensitive)")
+):
+    """
+    Cari stasiun berdasarkan nama operator (case-insensitive).
+    Endpoint ini ditambahkan melalui proses TDD.
+    """
+    # REFACTOR: Logika pencarian ada di repository, endpoint tetap bersih.
+    # Kita asumsikan implementasi di repository menangani pencarian case-insensitive.
+    return repository.search_stations_by_operator(operator_name=operator)
+
 @app.get("/stations/{station_id}", response_model=schemas.StationDetail, tags=["3. Stations (Station Management)"])
 def get_station(station_id: int):
     """Get detail stasiun beserta asset-assetnya"""
     station = repository.get_station(station_id)
     if not station:
         raise HTTPException(status_code=404, detail="Station tidak ditemukan")
-    
-    # Get station assets
-    assets = repository.get_station_assets_by_station(station_id)
-    
-    station_detail = schemas.StationDetail.model_validate(station)
-    station_detail.station_assets = [schemas.StationAssetRead.model_validate(a) for a in assets]
-    return station_detail
+    return service.get_station_details(station_id)
 
 # ===== STATION ASSET ENDPOINTS (Station Management Context) =====
 @app.post("/station-assets", response_model=schemas.StationAssetRead, tags=["3. Stations (Station Management)"])
@@ -377,25 +388,7 @@ def get_charging_session(session_id: int, current_user: dict = Depends(get_curre
             detail="Anda tidak berhak melihat session ini"
         )
     
-    # Get related data
-    user = repository.get_user(session.user_id)
-    asset = repository.get_station_asset(session.asset_id)
-    invoice = repository.get_invoice_by_session(session_id)
-    
-    return schemas.ChargingSessionDetail(
-        session_id=session.session_id,
-        user_id=session.user_id,
-        asset_id=session.asset_id,
-        start_time=session.start_time,
-        end_time=session.end_time,
-        duration=session.duration,
-        total_kwh=session.total_kwh,
-        charging_status=session.charging_status,
-        battery_capacity=session.battery_capacity,
-        user=schemas.UserRead.model_validate(user) if user else None,
-        station_asset=schemas.StationAssetRead.model_validate(asset) if asset else None,
-        invoice=schemas.InvoiceRead.model_validate(invoice) if invoice else None
-    )
+    return service.get_charging_session_details(session_id)
 
 # ===== INVOICE ENDPOINTS (Billing Context) =====
 @app.get("/invoices/me", response_model=List[schemas.InvoiceRead], tags=["5. Invoices (Billing Context)"])

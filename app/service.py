@@ -39,33 +39,21 @@ def start_charging_session(user_id: int, asset_id: int) -> models.ChargingSessio
     )
     return repository.create_charging_session(session)
 
-def stop_charging_session(session_id: int, manual_kwh: Optional[float] = None) -> models.ChargingSession:
+def _calculate_session_details(session: models.ChargingSession, asset: models.StationAsset, manual_kwh: Optional[float] = None) -> Dict[str, Any]:
     # 1. Get Session
-    session = repository.get_charging_session(session_id)
     if not session:
         raise ValueError("Session tidak ditemukan")
     if session.charging_status != models.ChargingStatus.ONGOING:
         raise ValueError("Session sudah berakhir")
 
-    # 2. Calculate Metrics
+    # 2. Calculate Metrics & Cost
     end_time = datetime.utcnow()
     duration_seconds = (end_time - session.start_time).total_seconds()
     duration_minutes = duration_seconds / 60.0
     duration_hours = duration_seconds / 3600.0
 
-    # 3. Get asset to determine power output (Max kW)
-    asset = repository.get_station_asset(session.asset_id)
-    max_kw = 7.0 # Default fallback
-    
-    if asset and asset.connector_port:
-        cp = asset.connector_port
-        # SAFETY CHECK: Handle Dict (from DB) vs Object (from Code)
-        if isinstance(cp, dict):
-            max_kw = cp.get("max_power_supported", 7.0)
-        elif hasattr(cp, "max_power_supported"):
-            max_kw = cp.max_power_supported
-
-    # Calculate kWh
+    # Refactored: Power is taken directly from the asset model
+    max_kw = asset.connector_port.max_power_supported if asset and asset.connector_port else 7.0
     if manual_kwh is not None:
         total_kwh = manual_kwh
     else:
@@ -73,40 +61,49 @@ def stop_charging_session(session_id: int, manual_kwh: Optional[float] = None) -
         total_kwh = round(max_kw * duration_hours, 3)
 
     # 4. Calculate Cost
-    cost_kwh = total_kwh * DEFAULT_TARIFF.cost_per_kwh
-    cost_time = duration_minutes * DEFAULT_TARIFF.cost_per_minute
+    cost_details = _calculate_billing(total_kwh, duration_minutes)
+
+    return {
+        "end_time": end_time,
+        "duration_minutes": duration_minutes,
+        "total_kwh": total_kwh,
+        **cost_details
+    }
+
+def _calculate_billing(kwh: float, minutes: float) -> Dict[str, Any]:
+    """Calculates cost and total billing from consumption metrics."""
+    cost_kwh = kwh * DEFAULT_TARIFF.cost_per_kwh
+    cost_time = minutes * DEFAULT_TARIFF.cost_per_minute
     total_cost = cost_kwh + cost_time
     
-    # Simple tax/admin fee calculation
-    admin_fee = 2000.0
+    admin_fee = 2000.0 # Should be moved to a config file
     billing_total = total_cost + admin_fee
+    
+    return {
+        "total_cost": total_cost,
+        "billing_total": billing_total
+    }
 
-    # 5. Update Session
-    session.end_time = end_time
-    session.duration = round(duration_minutes, 2)
-    session.total_kwh = total_kwh
-    session.charging_status = models.ChargingStatus.STOPPED
-    updated_session = repository.update_charging_session(session)
+def stop_charging_session(session_id: int, manual_kwh: Optional[float] = None) -> models.ChargingSession:
+    """Stops a charging session and generates an invoice in a single transaction."""
+    session = repository.get_charging_session(session_id)
+    if not session or session.charging_status != models.ChargingStatus.ONGOING:
+        raise ValueError("Session tidak ditemukan atau sudah berakhir")
 
-    # 6. Release Asset
+    asset = repository.get_station_asset(session.asset_id)
     if asset:
-        asset.is_available = True
-        repository.update_station_asset(asset)
+        # Calculate details before entering the transaction
+        details = _calculate_session_details(session, asset, manual_kwh)
 
-    # 7. Create Invoice
-    invoice = models.Invoice(
-        session_id=session.session_id,
-        user_id=session.user_id,
-        tariff=DEFAULT_TARIFF,
-        cost_total=round(total_cost, 2),
-        billing_total=round(billing_total, 2),
-        payment_method="N/A",  # Pending selection
-        payment_status=models.PaymentStatus.PENDING,
-        date_time=end_time
-    )
-    repository.create_invoice(invoice)
-
-    return updated_session
+        # Use a transactional function from the repository
+        return repository.execute_stop_session_transaction(
+            session=session,
+            asset=asset,
+            details=details,
+            tariff=DEFAULT_TARIFF
+        )
+    else:
+        raise ValueError("Asset terkait sesi ini tidak ditemukan.")
 
 def add_maintenance_log(asset_id: int, error_log: str) -> models.StationAsset:
     asset = repository.get_station_asset(asset_id)
