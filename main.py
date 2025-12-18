@@ -1,5 +1,3 @@
-import os
-
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,22 +16,10 @@ from app.auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 
-print("DATABASE_URL:", os.getenv("DATABASE_URL"))
-print("JWT_SECRET:", os.getenv("JWT_SECRET"))
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Code to run on startup
-    db.init_db()
-    print("Database initialized successfully!")
-    yield
-    # Code to run on shutdown (jika ada)
-
 app = FastAPI(
     title="EV Charging Management API",
     description="Platform Manajemen Pengisian Baterai Kendaraan Listrik",
     version="2.0.0",
-    lifespan=lifespan,
     docs_url=None, # Menonaktifkan docs default untuk custom UI
     redoc_url=None # Menonaktifkan redoc default
 )
