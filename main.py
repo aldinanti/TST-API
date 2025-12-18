@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +24,14 @@ app = FastAPI(
     docs_url=None, # Menonaktifkan docs default untuk custom UI
     redoc_url=None # Menonaktifkan redoc default
 )
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if os.getenv("DATABASE_URL"):
+        db.init_db()
+    else:
+        print("DATABASE_URL not set, skipping init_db")
+    yield
 
 # Setup templates dan static files (jika ada)
 try:
