@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +17,9 @@ from app.auth import (
     get_current_user,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
+
+print("DATABASE_URL:", os.getenv("DATABASE_URL"))
+print("JWT_SECRET:", os.getenv("JWT_SECRET"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
