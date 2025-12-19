@@ -14,8 +14,6 @@ connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
-
 def custom_json_serializer(obj):
     """
     Custom serializer to handle:
@@ -38,11 +36,10 @@ def custom_json_serializer(obj):
 def dumps(obj):
     return json.dumps(obj, default=custom_json_serializer)
 
-# We inject our custom serializer into the engine
 engine = create_engine(
     DATABASE_URL, 
     echo=False, 
-    connect_args={"check_same_thread": False},
+    connect_args=connect_args,
     json_serializer=dumps
 )
 
