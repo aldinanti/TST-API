@@ -25,13 +25,9 @@ app = FastAPI(
     redoc_url=None # Menonaktifkan redoc default
 )
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    if os.getenv("DATABASE_URL"):
-        db.init_db()
-    else:
-        print("DATABASE_URL not set, skipping init_db")
-    yield
+@app.on_event("startup")
+def on_startup():
+    db.init_db()
 
 # Setup templates dan static files (jika ada)
 try:
