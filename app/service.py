@@ -8,6 +8,18 @@ DEFAULT_TARIFF = models.Tariff(
     cost_per_minute=100.0
 )
 
+def get_station_details(station_id: int):
+    station = repository.get_station(station_id)
+    if not station:
+        raise ValueError("Station tidak ditemukan")
+
+    assets = repository.get_station_assets_by_station(station_id)
+
+    # Inject assets ke attribute yang sesuai schema
+    station.station_assets = assets
+
+    return station
+
 def start_charging_session(user_id: int, asset_id: int) -> models.ChargingSession:
     # 1. Validate User
     user = repository.get_user(user_id)
@@ -137,3 +149,19 @@ def update_invoice_payment(invoice_id: int, status: str, method: str) -> models.
     invoice.payment_method = method
     
     return repository.update_invoice(invoice)
+
+def get_charging_session_details(session_id: int):
+    session = repository.get_charging_session(session_id)
+    if not session:
+        raise ValueError("Session tidak ditemukan")
+
+    user = repository.get_user(session.user_id)
+    asset = repository.get_station_asset(session.asset_id)
+    invoice = repository.get_invoice_by_session(session_id)
+
+    return {
+        **session.__dict__,
+        "user": user,
+        "station_asset": asset,
+        "invoice": invoice
+    }

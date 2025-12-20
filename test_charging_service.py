@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+from fastapi import HTTPException
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 import json
@@ -113,6 +114,13 @@ def test_add_maintenance_log_success(mock_repo):
     result = service.add_maintenance_log(1, "error")
     assert result.is_available is False
 
+@patch("app.service.repository")
+def test_add_maintenance_log_asset_not_found(mock_repo):
+    mock_repo.get_station_asset.return_value = None 
+
+    with pytest.raises(ValueError, match="Asset tidak ditemukan"):
+        service.add_maintenance_log(asset_id=999, error_log="error")
+
 # =====================================================
 # SERVICE — INVOICE
 # =====================================================
@@ -126,6 +134,37 @@ def test_update_invoice_payment_valid(mock_repo):
     result = service.update_invoice_payment(1, "Completed", "cash")
     assert result == invoice
 
+@patch("app.service.repository")
+def test_update_invoice_payment_invoice_not_found(mock_repo):
+    mock_repo.get_invoice.return_value = None
+    with pytest.raises(ValueError):
+        service.update_invoice_payment(1, "Completed", "cash")
+
+@patch("app.service.repository")
+def test_update_invoice_payment_invalid_status(mock_repo):
+    invoice = MagicMock()
+    mock_repo.get_invoice.return_value = invoice
+
+    with pytest.raises(ValueError, match="Status pembayaran tidak valid"):
+        service.update_invoice_payment(
+            invoice_id=1,
+            status="SALAH_TOTAL",
+            method="cash"
+        )
+
+@patch("app.service.repository")
+def test_update_invoice_payment_valid_enum(mock_repo):
+    invoice = MagicMock()
+    mock_repo.get_invoice.return_value = invoice
+    mock_repo.update_invoice.return_value = invoice
+
+    result = service.update_invoice_payment(
+        invoice_id=1,
+        status=models.PaymentStatus.COMPLETED.value,
+        method="cash"
+    )
+
+    assert result == invoice
 # =====================================================
 # AUTH — PASSWORD & TOKEN
 # =====================================================
@@ -144,9 +183,18 @@ def test_create_and_decode_token():
 
 
 def test_decode_invalid_token():
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException) as exc:
         auth.decode_access_token("invalid.token.here")
 
+    assert exc.value.status_code == 401
+
+def test_create_token_with_custom_expiry():
+    token = auth.create_access_token(
+        {"sub": "1"},
+        expires_delta=timedelta(minutes=5)
+    )
+    payload = auth.decode_access_token(token)
+    assert payload["sub"] == "1"
 
 @patch("app.auth.decode_access_token")
 def test_get_current_user(mock_decode):
@@ -193,6 +241,12 @@ def test_station_schema():
     )
     assert station.location.address == "Jakarta"
 
+@patch("app.service.repository")
+def test_get_station_details_station_not_found(mock_repo):
+    mock_repo.get_station.return_value = None
+
+    with pytest.raises(ValueError, match="Station tidak ditemukan"):
+        service.get_station_details(999)
 
 def test_maintenance_schema_optional():
     log = MaintenanceLogBase(
@@ -235,16 +289,14 @@ def test_repository_get_user(mock_session):
 def test_start_charging_asset_not_found(mock_repo):
     mock_repo.get_user.return_value = MagicMock()
     mock_repo.get_active_session_by_user.return_value = None
-    mock_repo.get_station_asset.return_value = None
+    mock_repo.get_station_asset.return_value = None 
 
-    with pytest.raises(ValueError):
-        service.start_charging_session(1, 999)
-
+    with pytest.raises(ValueError, match="Asset tidak ditemukan"):
+        service.start_charging_session(user_id=1, asset_id=999)
 
 def test_calculate_session_details_session_none():
     with pytest.raises(ValueError):
         service._calculate_session_details(None, None)
-
 
 def test_calculate_session_details_not_ongoing():
     session = MagicMock()
@@ -260,7 +312,6 @@ def test_stop_charging_session_not_found(mock_repo):
     with pytest.raises(ValueError):
         service.stop_charging_session(1)
 
-
 @patch("app.service.repository")
 def test_stop_charging_asset_not_found(mock_repo):
     session = MagicMock(
@@ -273,13 +324,25 @@ def test_stop_charging_asset_not_found(mock_repo):
     with pytest.raises(ValueError):
         service.stop_charging_session(1)
 
+@patch("app.service.repository")
+def test_get_station_details_station_not_found(mock_repo):
+    mock_repo.get_station.return_value = None
+
+    with pytest.raises(ValueError, match="Station tidak ditemukan"):
+        service.get_station_details(999)
 
 @patch("app.service.repository")
-def test_update_invoice_payment_invoice_not_found(mock_repo):
-    mock_repo.get_invoice.return_value = None
-    with pytest.raises(ValueError):
-        service.update_invoice_payment(1, "Completed", "cash")
+def test_get_station_details_success(mock_repo):
+    station = MagicMock()
+    assets = [MagicMock(), MagicMock()]
 
+    mock_repo.get_station.return_value = station
+    mock_repo.get_station_assets_by_station.return_value = assets
+
+    result = service.get_station_details(1)
+
+    assert result == station
+    assert result.station_assets == assets
 # =====================================================
 # AUTH — EDGE CASES
 # =====================================================
@@ -617,6 +680,46 @@ def test_charging_session_functions(mock_get_session):
     assert repository.get_charging_sessions_by_user(1) == [charging_session]
     assert repository.get_active_session_by_user(1) == charging_session
 
+@patch("app.service.repository")
+def test_get_charging_session_details_not_found(mock_repo):
+    mock_repo.get_charging_session.return_value = None
+
+    with pytest.raises(ValueError, match="Session tidak ditemukan"):
+        service.get_charging_session_details(999)
+
+@patch("app.service.repository")
+def test_get_charging_session_details_invoice_none(mock_repo):
+    session = MagicMock()
+    session.id = 10
+    session.user_id = 1
+    session.asset_id = 2
+
+    mock_repo.get_charging_session.return_value = session
+    mock_repo.get_user.return_value = MagicMock()
+    mock_repo.get_station_asset.return_value = MagicMock()
+    mock_repo.get_invoice_by_session.return_value = None  # 🔥 INI KUNCINYA
+
+    result = service.get_charging_session_details(10)
+
+    assert result["invoice"] is None
+
+@patch("app.service.repository")
+def test_get_charging_session_details_success(mock_repo):
+    session = MagicMock()
+    session.id = 10
+    session.user_id = 1
+    session.asset_id = 2
+
+    mock_repo.get_charging_session.return_value = session
+    mock_repo.get_user.return_value = MagicMock()
+    mock_repo.get_station_asset.return_value = MagicMock()
+    mock_repo.get_invoice_by_session.return_value = MagicMock()
+
+    result = service.get_charging_session_details(10)
+
+    assert "user" in result
+    assert "station_asset" in result
+    assert "invoice" in result
 
 # =====================================================
 # STOP SESSION TRANSACTION
