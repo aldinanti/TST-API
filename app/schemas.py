@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, ValidationError, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -56,6 +56,17 @@ class VehicleRead(VehicleCreate):
     
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("connector_port", mode="before")
+    @classmethod
+    def safe_connector_port(cls, v):
+        # Fallback jika data connector_port di DB rusak/null
+        if not v or not isinstance(v, (dict, object)):
+            return ConnectorPortBase(standard_name="UNKNOWN", max_power_supported=0.0)
+        if isinstance(v, dict):
+            # Pastikan field required ada
+            return v if "standard_name" in v else {**v, "standard_name": "UNKNOWN", "max_power_supported": 0.0}
+        return v
+
 # ===== STATION SCHEMAS =====
 class StationCreate(BaseModel):
     station_operator: str
@@ -67,6 +78,16 @@ class StationRead(StationCreate):
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("location", mode="before")
+    @classmethod
+    def safe_location(cls, v):
+        # Fallback jika data location di DB rusak/null
+        if not v:
+            return LocationBase(latitude=0.0, longitude=0.0, address="Unknown")
+        if isinstance(v, dict):
+            return v if "latitude" in v else {**v, "latitude": 0.0, "longitude": 0.0, "address": "Unknown"}
+        return v
 
 class StationAssetCreate(BaseModel):
     station_id: int
@@ -176,6 +197,16 @@ class InvoiceRead(BaseModel):
     tariff: TariffRead
     
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("tariff", mode="before")
+    @classmethod
+    def safe_tariff(cls, v):
+        # Fallback jika data tariff di DB rusak/null
+        if not v:
+            return TariffRead(cost_per_kwh=0.0, cost_per_minute=0.0)
+        if isinstance(v, dict):
+            return v if "cost_per_kwh" in v else {**v, "cost_per_kwh": 0.0, "cost_per_minute": 0.0}
+        return v
 
 class InvoiceUpdatePayment(BaseModel):
     payment_status: str

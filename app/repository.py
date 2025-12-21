@@ -138,22 +138,35 @@ def execute_stop_session_transaction(
 ) -> models.ChargingSession:
     """Executes all database operations for stopping a session in a single transaction."""
     with get_db_session() as s:
-        # 1. Update Session
-        session.end_time = details["end_time"]
-        session.duration = round(details["duration_minutes"], 2)
-        session.total_kwh = details["total_kwh"]
-        session.charging_status = models.ChargingStatus.STOPPED
-        s.add(session)
+        # 1. Re-fetch objects (CRITICAL FIX for 500 Errors)
+        # Mengambil ulang data di dalam sesi transaksi aktif untuk mencegah DetachedInstanceError
+        db_session = s.get(models.ChargingSession, session.session_id)
+        db_asset = s.get(models.StationAsset, asset.asset_id)
 
-        # 2. Release Asset
-        asset.is_available = True
-        s.add(asset)
+        if not db_session or not db_asset:
+            raise ValueError("Session or Asset not found during transaction")
+        
+        # 2. Race Condition Check
+        if db_session.charging_status != models.ChargingStatus.ONGOING:
+            raise ValueError("Session sudah berakhir")
 
-        # 3. Create Invoice
+        # 3. Update Session
+        db_session.end_time = details["end_time"]
+        db_session.duration = round(details["duration_minutes"], 2)
+        db_session.total_kwh = details["total_kwh"]
+        db_session.charging_status = models.ChargingStatus.STOPPED
+        s.add(db_session)
+
+        # 4. Release Asset
+        db_asset.is_available = True
+        s.add(db_asset)
+
+        # 5. Create Invoice
+        # Menggunakan tariff.model_dump() untuk memastikan kompatibilitas JSON
         invoice = models.Invoice(
-            session_id=session.session_id,
-            user_id=session.user_id,
-            tariff=tariff,
+            session_id=db_session.session_id,
+            user_id=db_session.user_id,
+            tariff=tariff.model_dump() if hasattr(tariff, 'model_dump') else tariff,
             cost_total=round(details["total_cost"], 2),
             billing_total=round(details["billing_total"], 2),
             payment_method="N/A",
@@ -163,8 +176,8 @@ def execute_stop_session_transaction(
         s.add(invoice)
 
         s.commit()
-        s.refresh(session)
-        return session
+        s.refresh(db_session)
+        return db_session
 
 
 # ==========================================

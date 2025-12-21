@@ -62,7 +62,15 @@ def _calculate_session_details(session: models.ChargingSession, asset: models.St
     duration_hours = duration_seconds / 3600.0
 
     # Refactored: Power is taken directly from the asset model
-    max_kw = asset.connector_port.max_power_supported if asset and asset.connector_port else 7.0
+    # FIX: Handle connector_port whether it's an Object or a Dict (JSON from DB)
+    max_kw = 7.0
+    if asset and asset.connector_port:
+        cp = asset.connector_port
+        if isinstance(cp, dict):
+            max_kw = cp.get("max_power_supported", 7.0)
+        elif hasattr(cp, "max_power_supported"):
+            max_kw = cp.max_power_supported
+
     if manual_kwh is not None:
         total_kwh = manual_kwh
     else:

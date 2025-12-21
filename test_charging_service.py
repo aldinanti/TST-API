@@ -11,7 +11,8 @@ from app.schemas import (
     UserRegister, UserLogin, Token, TokenData,
     VehicleCreate, StationCreate, StationAssetCreate,
     ChargingSessionStart, InvoiceUpdatePayment,
-    LocationBase, ConnectorPortBase, MaintenanceLogBase
+    LocationBase, ConnectorPortBase, MaintenanceLogBase,
+    VehicleRead, StationRead, InvoiceRead, TariffRead
 )
 
 # =====================================================
@@ -75,6 +76,17 @@ def test_calculate_session_details_manual_kwh():
     result = service._calculate_session_details(session, asset, manual_kwh=10)
     assert result["total_kwh"] == 10
 
+def test_calculate_session_details_connector_port_as_dict():
+    session = MagicMock(
+        charging_status=models.ChargingStatus.ONGOING,
+        start_time=datetime.utcnow() - timedelta(hours=1)
+    )
+    asset = MagicMock()
+    # Simulate connector_port as dict (JSON from DB) to hit isinstance(cp, dict)
+    asset.connector_port = {"max_power_supported": 11.0}
+
+    result = service._calculate_session_details(session, asset)
+    assert result["total_kwh"] == 11.0
 
 def test_calculate_billing_positive():
     result = service._calculate_billing(5, 30)
@@ -254,6 +266,79 @@ def test_maintenance_schema_optional():
         date_time=datetime.utcnow()
     )
     assert log.error_log == "error"
+
+def test_schemas_coverage_gaps():
+    # 1. VehicleRead - safe_connector_port
+    # Trigger Line 63-64: None input
+    v1 = VehicleRead(
+        vehicle_id=1, user_id=1, nomor_plat="B1", battery_capacity=10,
+        connector_port=None
+    )
+    assert v1.connector_port.standard_name == "UNKNOWN"
+
+    # Trigger Line 65-67: Dict input missing keys
+    v2 = VehicleRead(
+        vehicle_id=1, user_id=1, nomor_plat="B2", battery_capacity=10,
+        connector_port={"invalid": "data"}
+    )
+    assert v2.connector_port.standard_name == "UNKNOWN"
+
+    # Trigger Line 68: Object input (already valid)
+    cp_obj = ConnectorPortBase(standard_name="Type2", max_power_supported=22.0)
+    v3 = VehicleRead(
+        vehicle_id=1, user_id=1, nomor_plat="B3", battery_capacity=10,
+        connector_port=cp_obj
+    )
+    assert v3.connector_port.standard_name == "Type2"
+
+    # 2. StationRead - safe_location
+    # Trigger Line 85-86: None input
+    s0 = StationRead(
+        station_id=1, created_at=datetime.utcnow(), station_operator="Op", connector_list=[],
+        location=None
+    )
+    assert s0.location.address == "Unknown"
+
+    # Trigger Line 87-88: Dict input missing keys
+    s1 = StationRead(
+        station_id=1, created_at=datetime.utcnow(), station_operator="Op", connector_list=[],
+        location={"invalid": "data"}
+    )
+    assert s1.location.address == "Unknown"
+
+    # Trigger Line 89: Object input
+    loc_obj = LocationBase(latitude=1.0, longitude=1.0, address="Valid")
+    s2 = StationRead(
+        station_id=1, created_at=datetime.utcnow(), station_operator="Op", connector_list=[],
+        location=loc_obj
+    )
+    assert s2.location.address == "Valid"
+
+    # 3. InvoiceRead - safe_tariff
+    # Trigger Line 205-206: None input
+    i1 = InvoiceRead(
+        invoice_id=1, session_id=1, cost_total=10, billing_total=10,
+        payment_status="Pending", payment_method="Cash", date_time=datetime.utcnow(),
+        tariff=None
+    )
+    assert i1.tariff.cost_per_kwh == 0.0
+
+    # Trigger Line 207-208: Dict input missing keys
+    i2 = InvoiceRead(
+        invoice_id=1, session_id=1, cost_total=10, billing_total=10,
+        payment_status="Pending", payment_method="Cash", date_time=datetime.utcnow(),
+        tariff={"invalid": "data"}
+    )
+    assert i2.tariff.cost_per_kwh == 0.0
+
+    # Trigger Line 209: Object input
+    t_obj = TariffRead(cost_per_kwh=100.0, cost_per_minute=10.0)
+    i3 = InvoiceRead(
+        invoice_id=1, session_id=1, cost_total=10, billing_total=10,
+        payment_status="Pending", payment_method="Cash", date_time=datetime.utcnow(),
+        tariff=t_obj
+    )
+    assert i3.tariff.cost_per_kwh == 100.0
 
 # =====================================================
 # REPOSITORY — BASIC CRUD (MOCKED)
@@ -501,9 +586,21 @@ def test_execute_stop_session_transaction(mock_session):
     mock_s = MagicMock()
     mock_session.return_value.__enter__.return_value = mock_s
 
-    session = MagicMock(session_id=1, user_id=1)
-    asset = MagicMock()
-    tariff = MagicMock()
+    # Input objects
+    session_input = MagicMock(session_id=1)
+    asset_input = MagicMock(asset_id=2)
+    
+    # DB objects (returned by s.get)
+    db_session = MagicMock()
+    db_session.session_id = 1
+    db_session.user_id = 1
+    db_session.charging_status = models.ChargingStatus.ONGOING # Fix: Set status ONGOING
+
+    db_asset = MagicMock(asset_id=2)
+
+    # Configure s.get to return db_session then db_asset
+    mock_s.get.side_effect = [db_session, db_asset]
+
 
     details = {
         "end_time": datetime.utcnow(),
@@ -512,13 +609,15 @@ def test_execute_stop_session_transaction(mock_session):
         "total_cost": 100,
         "billing_total": 110
     }
+    tariff = MagicMock()
 
     result = repository.execute_stop_session_transaction(
-        session, asset, details, tariff
+        session_input, asset_input, details, tariff
     )
 
-    mock_s.commit.assert_called()
-    assert result == session
+    mock_s.commit.assert_called_once()
+    mock_s.refresh.assert_called_once_with(db_session)
+    assert result == db_session
 
 # =====================================================
 # custom_json_serializer
@@ -797,13 +896,20 @@ def test_get_charging_session_details_success(mock_repo):
 @patch("app.repository.get_db_session")
 def test_execute_stop_session_transaction(mock_get_session):
     session_db = mock_session()
+    db_session = MagicMock()
+    db_session.charging_status = models.ChargingStatus.ONGOING
+    db_session.session_id = 1
+    db_session.user_id = 1
+
+    db_asset = MagicMock()
+    db_asset.asset_id = 1
+
+    # Side effect untuk s.get: session lalu asset
+    session_db.get.side_effect = [db_session, db_asset]
     mock_get_session.return_value = session_db
 
-    session = MagicMock()
-    session.session_id = 1
-    session.user_id = 1
-
-    asset = MagicMock()
+    session = MagicMock(session_id=1, user_id=1)
+    asset = MagicMock(asset_id=1)
     details = {
         "end_time": MagicMock(),
         "duration_minutes": 60.123,
@@ -813,15 +919,45 @@ def test_execute_stop_session_transaction(mock_get_session):
     }
     tariff = MagicMock()
 
-    result = repository.execute_stop_session_transaction(
-        session, asset, details, tariff
-    )
+    result = repository.execute_stop_session_transaction(session, asset, details, tariff)
 
-    session_db.add.assert_called()
+    assert result == db_session
     session_db.commit.assert_called_once()
-    session_db.refresh.assert_called_once_with(session)
-    assert result == session
+    session_db.refresh.assert_called_once_with(db_session)
 
+
+@patch("app.repository.get_db_session")
+def test_execute_stop_session_transaction_not_found(mock_get_session):
+    session_db = mock_session()
+    mock_get_session.return_value = session_db
+
+    # Simulate re-fetch returning None (first call for session returns None)
+    session_db.get.side_effect = [None, MagicMock()]
+
+    session = MagicMock(session_id=1)
+    asset = MagicMock(asset_id=1)
+    
+    with pytest.raises(ValueError, match="Session or Asset not found during transaction"):
+        repository.execute_stop_session_transaction(session, asset, {}, MagicMock())
+
+@patch("app.repository.get_db_session")
+def test_execute_stop_session_transaction_already_stopped(mock_get_session):
+    session_db = mock_session()
+    mock_get_session.return_value = session_db
+
+    # Simulate re-fetch returning objects, but session is already STOPPED
+    db_session = MagicMock()
+    db_session.charging_status = models.ChargingStatus.STOPPED
+    db_asset = MagicMock()
+    
+    # side_effect for s.get calls: first for session, second for asset
+    session_db.get.side_effect = [db_session, db_asset]
+
+    session = MagicMock(session_id=1)
+    asset = MagicMock(asset_id=1)
+    
+    with pytest.raises(ValueError, match="Session sudah berakhir"):
+        repository.execute_stop_session_transaction(session, asset, {}, MagicMock())
 
 # =====================================================
 # INVOICE
