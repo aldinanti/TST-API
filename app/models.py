@@ -17,19 +17,19 @@ class PaymentStatus(str, Enum):
 # ===== VALUE OBJECTS =====
 class Location(SQLModel):
     """Value Object untuk lokasi stasiun"""
-    latitude: float
-    longitude: float
-    address: str
+    latitude: float = 0.0
+    longitude: float = 0.0
+    address: str = "Unknown"
 
 class ConnectorPort(SQLModel):
     """Value Object untuk port konektor"""
-    standard_name: str  # CCS, CHAdeMO, Type 2, etc
-    max_power_supported: float  # dalam kW
+    standard_name: str = "Unknown"  # CCS, CHAdeMO, Type 2, etc
+    max_power_supported: float = 0.0  # dalam kW
 
 class MaintenanceLog(SQLModel):
     """Value Object untuk log maintenance"""
     error_log: Optional[str] = None
-    date_time: datetime
+    date_time: datetime = Field(default_factory=datetime.utcnow)
 
 class Tariff(SQLModel):
     """Value Object untuk tarif pengisian"""

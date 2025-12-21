@@ -333,16 +333,85 @@ def test_get_station_details_station_not_found(mock_repo):
 
 @patch("app.service.repository")
 def test_get_station_details_success(mock_repo):
+    # 1. Setup Station Mock dengan data valid untuk Pydantic
     station = MagicMock()
-    assets = [MagicMock(), MagicMock()]
+    station.station_id = 1
+    station.station_operator = "PLN"
+    station.connector_list = ["Type2"]
+    station.created_at = datetime.utcnow()
+    
+    # Location harus memiliki atribut latitude, longitude, address (float/str)
+    location_mock = MagicMock()
+    location_mock.latitude = -6.2
+    location_mock.longitude = 106.8
+    location_mock.address = "Jakarta"
+    station.location = location_mock
+
+    # 2. Setup Assets Mock
+    asset1 = MagicMock()
+    asset1.asset_id = 101
+    asset1.station_id = 1
+    asset1.model = "Charger A"
+    asset1.is_available = True
+    asset1.created_at = datetime.utcnow()
+    asset1.maintenance_log = None
+    
+    # Connector Port harus memiliki nilai float dan str yang valid
+    cp1 = MagicMock()
+    cp1.standard_name = "Type2"
+    cp1.max_power_supported = 22.0  # Penting: harus float, bukan MagicMock
+    asset1.connector_port = cp1
+
+    assets = [asset1]
 
     mock_repo.get_station.return_value = station
     mock_repo.get_station_assets_by_station.return_value = assets
 
     result = service.get_station_details(1)
 
-    assert result == station
-    assert result.station_assets == assets
+    # Assertions: Cek atribut Pydantic model
+    assert result.station_id == 1
+    assert result.station_operator == "PLN"
+    assert len(result.station_assets) == 1
+    assert result.station_assets[0].asset_id == 101
+    assert result.station_assets[0].connector_port.max_power_supported == 22.0
+
+@patch("app.service.repository")
+def test_get_station_details_defensive_coding(mock_repo):
+    # 1. Setup Station dengan data yang memicu fallback (Defensive Coding)
+    station = MagicMock()
+    station.station_id = 99
+    station.station_operator = "Defensive Op"
+    station.created_at = datetime.utcnow()
+    
+    # Trigger Line 126-128: Location None/Error -> Masuk except block
+    station.location = None 
+    
+    # Trigger Line 133: Connector List None -> Fallback ke []
+    station.connector_list = None
+
+    # 2. Setup Assets dengan data connector_port rusak
+    asset_bad = MagicMock()
+    asset_bad.asset_id = 202
+    asset_bad.station_id = 99
+    asset_bad.model = "Charger Rusak"
+    asset_bad.is_available = True
+    asset_bad.created_at = datetime.utcnow()
+    asset_bad.maintenance_log = None
+    asset_bad.connector_port = {"invalid": "data"} 
+
+    assets = [asset_bad]
+
+    mock_repo.get_station.return_value = station
+    mock_repo.get_station_assets_by_station.return_value = assets
+
+    result = service.get_station_details(99)
+
+    # Assertions: Memastikan fallback values digunakan
+    assert result.location.address == "Location Data Missing"
+    assert result.connector_list == []
+    assert result.station_assets[0].connector_port.standard_name == "UNKNOWN"
+
 # =====================================================
 # AUTH — EDGE CASES
 # =====================================================

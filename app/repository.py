@@ -4,8 +4,6 @@ from app import models
 from typing import Optional, List
 from sqlalchemy.orm import selectinload
 from typing import Dict, Any
-from app import models, db  # kalau belum ada
-from sqlmodel import Session
 
 # ==========================================
 # ACCOUNT CONTEXT (Users & Vehicles)

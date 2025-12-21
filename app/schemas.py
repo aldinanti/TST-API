@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, ConfigDict, Field
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, ValidationError
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -8,10 +8,12 @@ class LocationBase(BaseModel):
     latitude: float
     longitude: float
     address: str
+    model_config = ConfigDict(from_attributes=True)
 
 class ConnectorPortBase(BaseModel):
     standard_name: str
     max_power_supported: float
+    model_config = ConfigDict(from_attributes=True)
 
 class MaintenanceLogBase(BaseModel):
     error_log: Optional[str] = None
@@ -73,18 +75,74 @@ class StationAssetCreate(BaseModel):
     maintenance_log: Optional[MaintenanceLogBase] = None
 
 class StationAssetRead(StationAssetCreate):
-    asset_id: int = Field(alias="asset_id")
-    is_available: bool
-    created_at: datetime
-    
-    model_config = ConfigDict(from_attributes=True, by_alias=True)
+    asset_id: Optional[int] = None
+    is_available: Optional[bool] = None
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_orm_asset(cls, asset):
+        return cls(
+            asset_id=getattr(asset, "asset_id", None),
+            station_id=getattr(asset, "station_id", None),
+            model=getattr(asset, "model", "UNKNOWN"),
+
+            connector_port=cls._safe_connector_port(asset),
+
+            is_available=getattr(asset, "is_available", True),
+            created_at=getattr(asset, "created_at", datetime.utcnow()),
+            maintenance_log=getattr(asset, "maintenance_log", None),
+        )
+
+    @staticmethod
+    def _safe_connector_port(asset) -> ConnectorPortBase:
+        try:
+            cp = getattr(asset, "connector_port", None)
+            if cp:
+                return ConnectorPortBase.model_validate(cp)
+        except (ValidationError, ValueError, TypeError):
+            pass
+        return ConnectorPortBase(standard_name="UNKNOWN", max_power_supported=0.0)
+
 
 class StationAssetUpdate(BaseModel):
     is_available: Optional[bool] = None
     maintenance_log: Optional[MaintenanceLogBase] = None
 
 class StationDetail(StationRead):
-    station_assets: List[StationAssetRead] = []
+    station_assets: List[StationAssetRead] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_orm_station(cls, station, assets):
+        # Defensive Coding: Handle jika location di DB null/rusak
+        try:
+            loc_data = getattr(station, "location", None)
+            if loc_data:
+                loc = LocationBase.model_validate(loc_data)
+            else:
+                raise ValueError("Location missing")
+        except (ValidationError, ValueError, TypeError):
+            loc = LocationBase(latitude=0.0, longitude=0.0, address="Location Data Missing")
+        
+        # Defensive Coding: Handle connector_list
+        con_list = getattr(station, "connector_list", [])
+        if con_list is None:
+            con_list = []
+
+        return cls(
+            station_id=station.station_id,
+            station_operator=station.station_operator,
+            location=loc,
+            connector_list=con_list,
+            created_at=station.created_at,
+            station_assets=[
+                StationAssetRead.from_orm_asset(asset)
+                for asset in assets
+            ],
+        )
 
 # ===== CHARGING SESSION SCHEMAS =====
 class ChargingSessionStart(BaseModel):

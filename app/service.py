@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, Union, Dict, Any
 from app import repository, models
+from app.schemas import StationDetail
 
 # Default Tariff Configuration
 DEFAULT_TARIFF = models.Tariff(
@@ -8,17 +9,13 @@ DEFAULT_TARIFF = models.Tariff(
     cost_per_minute=100.0
 )
 
-def get_station_details(station_id: int):
+def get_station_details(station_id: int) -> StationDetail:
     station = repository.get_station(station_id)
     if not station:
         raise ValueError("Station tidak ditemukan")
 
     assets = repository.get_station_assets_by_station(station_id)
-
-    # Inject assets ke attribute yang sesuai schema
-    station.station_assets = assets
-
-    return station
+    return StationDetail.from_orm_station(station, assets)
 
 def start_charging_session(user_id: int, asset_id: int) -> models.ChargingSession:
     # 1. Validate User
